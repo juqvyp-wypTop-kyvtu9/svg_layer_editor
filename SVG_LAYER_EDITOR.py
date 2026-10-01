@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QPainter, QVector3D
 from PySide6.QtWidgets import (
     QApplication,
     QColorDialog,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QGridLayout,
@@ -57,6 +58,7 @@ class MapLayer:
     offset_y: float = 0.0
     pivot_x: float = 0.0
     pivot_y: float = 0.0
+    pivot_mode: str = "center"
     billboard: bool = False
 
 
@@ -225,6 +227,11 @@ class MainWindow(QMainWindow):
         self.pivot_y_spin.setSingleStep(1.0)
         self.pivot_y_spin.valueChanged.connect(self.change_pivot)
 
+        self.pivot_mode_combo = QComboBox()
+        self.pivot_mode_combo.addItems(["レイヤー中心", "座標指定"])
+        self.pivot_mode_combo.setCurrentText("レイヤー中心")
+        self.pivot_mode_combo.currentTextChanged.connect(self.change_pivot_mode)
+
         self.scale_x_spin = QDoubleSpinBox()
         self.scale_x_spin.setRange(0.01, 20.0)
         self.scale_x_spin.setSingleStep(0.1)
@@ -367,10 +374,15 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(self.offset_x_spin)
         side_layout.addWidget(QLabel("位置 Y"))
         side_layout.addWidget(self.offset_y_spin)
+        side_layout.addWidget(QLabel("位置 Z"))
+        side_layout.addWidget(self.height_spin)
+        side_layout.addWidget(self.height_slider)
         side_layout.addWidget(QLabel("回転中心 X"))
         side_layout.addWidget(self.pivot_x_spin)
         side_layout.addWidget(QLabel("回転中心 Y"))
         side_layout.addWidget(self.pivot_y_spin)
+        side_layout.addWidget(QLabel("回転中心基準"))
+        side_layout.addWidget(self.pivot_mode_combo)
         side_layout.addWidget(QLabel("拡大縮小 X"))
         side_layout.addWidget(self.scale_x_spin)
         side_layout.addWidget(self.scale_x_slider)
@@ -380,9 +392,6 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(QLabel("回転"))
         side_layout.addWidget(self.rotation_spin)
         side_layout.addWidget(self.rotation_slider)
-        side_layout.addWidget(QLabel("高さ"))
-        side_layout.addWidget(self.height_spin)
-        side_layout.addWidget(self.height_slider)
         side_layout.addWidget(QLabel("透明度（不透明度）"))
         side_layout.addWidget(self.opacity_slider)
         side_layout.addWidget(self.opacity_label)
@@ -418,12 +427,26 @@ class MainWindow(QMainWindow):
         self.disable_layer_controls()
         self.update_camera_controls()
 
+    def select_layer(self, row):
+        self.update_layer_controls()
+
+    def rename_selected_layer(self):
+        layer = self.selected_layer()
+        if layer is None:
+            return
+        new_name = self.name_edit.text().strip() or layer.name
+        layer.name = new_name
+        current_item = self.layer_list.currentItem()
+        if current_item is not None:
+            current_item.setText(new_name)
+
     def disable_layer_controls(self):
         self.name_edit.setEnabled(False)
         self.offset_x_spin.setEnabled(False)
         self.offset_y_spin.setEnabled(False)
         self.pivot_x_spin.setEnabled(False)
         self.pivot_y_spin.setEnabled(False)
+        self.pivot_mode_combo.setEnabled(False)
         self.scale_x_spin.setEnabled(False)
         self.scale_y_spin.setEnabled(False)
         self.scale_x_slider.setEnabled(False)
@@ -452,6 +475,8 @@ class MainWindow(QMainWindow):
 
     def apply_layer_transform(self, layer: MapLayer):
         half_size = TEXTURE_SIZE * WORLD_SCALE / 2
+        pivot_x = layer.pivot_x if layer.pivot_mode == "manual" else 0.0
+        pivot_y = layer.pivot_y if layer.pivot_mode == "manual" else 0.0
         layer.item.resetTransform()
         layer.item.translate(layer.offset_x, layer.offset_y, layer.height)
 
@@ -461,7 +486,7 @@ class MainWindow(QMainWindow):
         else:
             layer.item.rotate(layer.rotation, 0, 0, 1)
 
-        layer.item.translate(layer.pivot_x, layer.pivot_y, 0)
+        layer.item.translate(pivot_x, pivot_y, 0)
         layer.item.scale(layer.scale_x * WORLD_SCALE, layer.scale_y * WORLD_SCALE, 1)
         layer.item.translate(-half_size, -half_size, 0)
 
@@ -476,6 +501,7 @@ class MainWindow(QMainWindow):
         self.offset_y_spin.setEnabled(True)
         self.pivot_x_spin.setEnabled(True)
         self.pivot_y_spin.setEnabled(True)
+        self.pivot_mode_combo.setEnabled(True)
         self.scale_x_spin.setEnabled(True)
         self.scale_y_spin.setEnabled(True)
         self.scale_x_slider.setEnabled(True)
@@ -496,6 +522,7 @@ class MainWindow(QMainWindow):
         self.offset_y_spin.blockSignals(True)
         self.pivot_x_spin.blockSignals(True)
         self.pivot_y_spin.blockSignals(True)
+        self.pivot_mode_combo.blockSignals(True)
         self.scale_x_spin.blockSignals(True)
         self.scale_y_spin.blockSignals(True)
         self.scale_x_slider.blockSignals(True)
@@ -511,6 +538,10 @@ class MainWindow(QMainWindow):
         self.offset_y_spin.setValue(layer.offset_y)
         self.pivot_x_spin.setValue(layer.pivot_x)
         self.pivot_y_spin.setValue(layer.pivot_y)
+        self.pivot_mode_combo.setCurrentText("レイヤー中心" if layer.pivot_mode == "center" else "座標指定")
+        manual_pivot = layer.pivot_mode == "manual"
+        self.pivot_x_spin.setEnabled(manual_pivot)
+        self.pivot_y_spin.setEnabled(manual_pivot)
         self.scale_x_spin.setValue(layer.scale_x)
         self.scale_y_spin.setValue(layer.scale_y)
         self.scale_x_slider.setValue(int(layer.scale_x * 100))
@@ -527,6 +558,7 @@ class MainWindow(QMainWindow):
         self.offset_y_spin.blockSignals(False)
         self.pivot_x_spin.blockSignals(False)
         self.pivot_y_spin.blockSignals(False)
+        self.pivot_mode_combo.blockSignals(False)
         self.scale_x_spin.blockSignals(False)
         self.scale_y_spin.blockSignals(False)
         self.scale_x_slider.blockSignals(False)
@@ -537,20 +569,20 @@ class MainWindow(QMainWindow):
         self.height_slider.blockSignals(False)
         self.opacity_slider.blockSignals(False)
 
-    def select_layer(self, row):
-        self.update_layer_controls()
-
-    def rename_selected_layer(self):
+    def change_pivot_mode(self, text):
         layer = self.selected_layer()
         if layer is None:
             return
-        new_name = self.name_edit.text().strip() or layer.name
-        layer.name = new_name
-        current_item = self.layer_list.currentItem()
-        if current_item is not None:
-            current_item.setText(new_name)
+        layer.pivot_mode = "center" if text == "レイヤー中心" else "manual"
+        if layer.pivot_mode == "center":
+            layer.pivot_x = 0.0
+            layer.pivot_y = 0.0
+            self.pivot_x_spin.setValue(0.0)
+            self.pivot_y_spin.setValue(0.0)
+        self.apply_layer_transform(layer)
+        self.view.update()
 
-    def add_svg_layer(self, path: str, *, name: str | None = None, scale_x: float = 1.0, scale_y: float = 1.0, rotation: float = 0.0, height: float | None = None, opacity: int = 100, offset_x: float = 0.0, offset_y: float = 0.0, pivot_x: float = 0.0, pivot_y: float = 0.0, billboard: bool = False):
+    def add_svg_layer(self, path: str, *, name: str | None = None, scale_x: float = 1.0, scale_y: float = 1.0, rotation: float = 0.0, height: float | None =  None, opacity: int = 100, offset_x: float = 0.0, offset_y: float = 0.0, pivot_x: float = 0.0, pivot_y: float = 0.0, pivot_mode: str = "center", billboard: bool = False):
         original_data = svg_to_rgba(path)
         item = gl.GLImageItem(data=original_data, smooth=True, glOptions="translucent")
         base_name = name or Path(path).name
@@ -569,6 +601,7 @@ class MainWindow(QMainWindow):
             offset_y=offset_y,
             pivot_x=pivot_x,
             pivot_y=pivot_y,
+            pivot_mode=pivot_mode,
             billboard=billboard,
         )
         self.layers.append(layer)
@@ -576,19 +609,19 @@ class MainWindow(QMainWindow):
         self.apply_layer_transform(layer)
         self.add_layer_to_list(layer)
 
-    def add_icon_svg(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "SVGアイコンを選択", "", "SVGファイル (*.svg)")
-        for path in paths:
-            try:
-                self.add_svg_layer(path, name=Path(path).stem, scale_x=0.7, scale_y=0.7, height=len(self.layers) * 4.0, billboard=True)
-            except Exception as exc:
-                QMessageBox.warning(self, "読込エラー", f"{path}\n\n{exc}")
-
     def add_svg(self):
         paths, _ = QFileDialog.getOpenFileNames(self, "SVGを選択", "", "SVGファイル (*.svg)")
         for path in paths:
             try:
                 self.add_svg_layer(path)
+            except Exception as exc:
+                QMessageBox.warning(self, "読込エラー", f"{path}\n\n{exc}")
+
+    def add_icon_svg(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, "SVGアイコンを選択", "", "SVGファイル (*.svg)")
+        for path in paths:
+            try:
+                self.add_svg_layer(path, name=Path(path).stem, scale_x=0.7, scale_y=0.7, height=len(self.layers) * 4.0, billboard=True)
             except Exception as exc:
                 QMessageBox.warning(self, "読込エラー", f"{path}\n\n{exc}")
 
@@ -609,6 +642,9 @@ class MainWindow(QMainWindow):
             rotation=0.0,
             offset_x=0.0,
             offset_y=0.0,
+            pivot_x=0.0,
+            pivot_y=0.0,
+            pivot_mode="center",
             billboard=True,
         )
         self.layers.append(layer)
@@ -765,6 +801,10 @@ class MainWindow(QMainWindow):
         layer = self.selected_layer()
         if layer is None:
             return
+        layer.pivot_mode = "manual"
+        self.pivot_mode_combo.blockSignals(True)
+        self.pivot_mode_combo.setCurrentText("座標指定")
+        self.pivot_mode_combo.blockSignals(False)
         if self.sender() == self.pivot_x_spin:
             layer.pivot_x = value
         elif self.sender() == self.pivot_y_spin:
@@ -959,6 +999,9 @@ class MainWindow(QMainWindow):
                     "offset_y": float(layer.offset_y),
                     "billboard": bool(layer.billboard),
                     "text": layer.name if layer.kind == "text" else "",
+                    "pivot_mode": layer.pivot_mode,
+                    "pivot_x": float(layer.pivot_x),
+                    "pivot_y": float(layer.pivot_y),
                 }
                 for layer in self.layers
             ],
@@ -989,6 +1032,9 @@ class MainWindow(QMainWindow):
             rotation = float(layer_data.get("rotation", 0.0))
             offset_x = float(layer_data.get("offset_x", 0.0))
             offset_y = float(layer_data.get("offset_y", 0.0))
+            pivot_mode = str(layer_data.get("pivot_mode", "center"))
+            pivot_x = float(layer_data.get("pivot_x", 0.0))
+            pivot_y = float(layer_data.get("pivot_y", 0.0))
             billboard = bool(layer_data.get("billboard", False))
 
             try:
@@ -1009,6 +1055,9 @@ class MainWindow(QMainWindow):
                         rotation=rotation,
                         offset_x=offset_x,
                         offset_y=offset_y,
+                        pivot_x=pivot_x,
+                        pivot_y=pivot_y,
+                        pivot_mode=pivot_mode,
                         billboard=billboard,
                     )
                     self.layers.append(layer)
@@ -1019,7 +1068,7 @@ class MainWindow(QMainWindow):
                     path = layer_data.get("path")
                     if not path:
                         continue
-                    self.add_svg_layer(path, name=name, scale_x=scale_x, scale_y=scale_y, rotation=rotation, height=height, opacity=opacity, offset_x=offset_x, offset_y=offset_y, billboard=billboard)
+                    self.add_svg_layer(path, name=name, scale_x=scale_x, scale_y=scale_y, rotation=rotation, height=height, opacity=opacity, offset_x=offset_x, offset_y=offset_y, pivot_x=pivot_x, pivot_y=pivot_y, pivot_mode=pivot_mode, billboard=billboard)
             except Exception as exc:
                 QMessageBox.warning(self, "読み込みエラー", f"{name}\n\n{exc}")
 
